@@ -1,6 +1,6 @@
 {
   "name": "amap-trip",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH 双模式高德出行助手：行程编排 + 沿线地理要素摸底（10 个工具 + skill）",
   "type": "module",
   "main": "./index.mjs",
