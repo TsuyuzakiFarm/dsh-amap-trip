@@ -1,0 +1,4 @@
+# amap-trip 作为标准插件包时的挂载行（profile 的 patch 层按包名挂载本插件）。
+- insert:
+    - id: amap-trip
+      name: amap-trip

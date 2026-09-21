@@ -1,0 +1,11 @@
+{
+  "name": "amap-trip",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.mjs",
+  "description": "高德出行工具（双模式：日常/工作）· DSH 插件",
+  "dsh": {
+    "plugin": true
+  }
+}

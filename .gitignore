@@ -1,0 +1,10 @@
+cache/
+out/
+docs/samples/
+node_modules/
+state.json
+profiles/
+.test-state/
+*.bak*
+*.log
+amap-jsapi/
