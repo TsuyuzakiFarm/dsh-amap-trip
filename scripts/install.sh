@@ -17,7 +17,8 @@ STAMP="$(date +%Y%m%d%H%M%S)"
 
 echo "== 1/4 部署包 → $DST =="
 mkdir -p "$PROFILE/plugins"
-if [ -d "$DST" ]; then mv "$DST" "$DST.bak.$STAMP"; fi
+# 备份用“复制”而不是“移动”：复制失败时原目录仍在，不会把插件目录清空
+if [ -d "$DST" ]; then cp -R "$DST" "$DST.bak.$STAMP"; fi
 mkdir -p "$DST"
 cp -R "$WS/amap-trip/plugin/." "$DST/"
 rm -rf "$DST/node_modules"

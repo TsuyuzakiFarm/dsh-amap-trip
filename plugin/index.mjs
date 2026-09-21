@@ -200,9 +200,9 @@ export function apply(ctx, config) {
     parameters: {
       type: 'object',
       properties: {
-        origin: { type: 'string', description: '起点 "lng,lat"' },
-        destination: { type: 'string', description: '终点 "lng,lat"' },
-        waypoints: { type: 'array', items: { type: 'string' }, description: '途经点数组（可选）' },
+        origin: { type: 'string', description: '起点：地址或 "lng,lat"' },
+        destination: { type: 'string', description: '终点：地址或 "lng,lat"' },
+        waypoints: { type: 'array', items: { type: 'string' }, description: '途经点数组（可选，地址或坐标）' },
         mode: { type: 'string', enum: ['driving', 'walking', 'bicycling'], description: '出行方式，默认 driving' },
         strategy: { type: 'string', description: '驾车算路策略（可选，v5 策略号）' }
       },
@@ -214,7 +214,12 @@ export function apply(ctx, config) {
       try {
         const { client, cred } = makeClient(cfg, exec.signal)
         if (!cred.key) return '✗ 未找到高德 Web 服务 key（AMAP_WS_KEY）'
-        const paths = await client.route({ origin: args.origin, destination: args.destination, waypoints: args.waypoints, mode: args.mode, strategy: args.strategy })
+        const toCoord = makeResolver(client)
+        const origin = await toCoord(args.origin)
+        const destination = await toCoord(args.destination)
+        const wps = []
+        for (const w of args.waypoints || []) wps.push(await toCoord(w))
+        const paths = await client.route({ origin, destination, waypoints: wps.length ? wps : undefined, mode: args.mode, strategy: args.strategy })
         if (!paths.length) return '无规划结果'
         const lines = []
         paths.forEach((p, i) => {
@@ -238,7 +243,7 @@ export function apply(ctx, config) {
     parameters: {
       type: 'object',
       properties: {
-        location: { type: 'string', description: '周边搜索中心点 "lng,lat"' },
+        location: { type: 'string', description: '周边搜索中心点：地址或 "lng,lat"' },
         radius: { type: 'number', description: '周边搜索半径（米，默认 1000）' },
         keywords: { type: 'string', description: '关键字' },
         types: { type: 'string', description: 'POI 类型编码（高德分类码，如 141200 学校、050000 餐饮）' },
@@ -254,7 +259,13 @@ export function apply(ctx, config) {
       try {
         const { client, cred } = makeClient(cfg, exec.signal)
         if (!cred.key) return '✗ 未找到高德 Web 服务 key（AMAP_WS_KEY）'
-        const around = args.location ? { location: args.location, radius: args.radius || 1000 } : null
+        let center = args.location
+        if (center && !/^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(String(center).trim())) {
+          const g = await client.geocode(String(center))
+          if (!g.length) return '✗ 无法解析中心点: ' + center
+          center = g[0].location
+        }
+        const around = center ? { location: center, radius: args.radius || 1000 } : null
         if (!around && !args.keywords) return '✗ 需要 location（周边）或 keywords（关键字）之一'
         const raw = await client.poi({ around, keywords: args.keywords, types: args.types, region: args.region, source: args.source, pageSize: Math.min(args.pageSize || 10, 25), page: args.page || 1 })
         if (!raw.pois.length) return '无结果（source=' + raw.source + '）'
@@ -527,7 +538,7 @@ export function apply(ctx, config) {
         const types = Array.from(new Set(cats.map((c) => c.types).join('|').split('|'))).join('|')
         const res = await corridorSearch(client, {
           points: path.points, stepM: args.stepM || d.stepM, radiusM: args.radiusM || d.radiusM,
-          source: args.source || 'v5', pageSize: cfg.corridor.pageSize, types, categories: cats,
+          source: args.source || (preset === 'daily' ? 'v3' : 'v5'), pageSize: cfg.corridor.pageSize, types, categories: cats,
           maxSamples: args.maxSamples || cfg.corridor.maxSamples, signal: exec.signal
         })
         const nodes = nodesFromRoute(path)
@@ -539,7 +550,8 @@ export function apply(ctx, config) {
           try {
             const rg = await client.regeocode(destination)
             const comp = rg.component || {}
-            const city = comp.city || comp.province || ''
+            const pick = (v) => (Array.isArray(v) ? (v[0] || '') : (v || ''))
+            const city = pick(comp.adcode) || pick(comp.city) || pick(comp.province) || ''
             const w = city ? await client.weather(city) : null
             weatherLine = w && w.city ? (w.city + ' ' + w.weather + ' ' + w.temperature + 'C 风' + (w.winddirection || '-') + (w.windpower || '') + '级') : '未取到'
           } catch (e) { weatherLine = '未取到（' + String((e && e.message) || e) + '）' }
