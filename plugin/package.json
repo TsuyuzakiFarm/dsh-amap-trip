@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./index.mjs",
   "license": "MIT",
-  "author": "TsuyuzakiFarm",
+  "author": "TsuyuzakiMahiru <jingyee1900@live.cn>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TsuyuzakiFarm/dsh-amap-trip.git"
