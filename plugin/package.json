@@ -1,10 +1,39 @@
 {
   "name": "amap-trip",
   "version": "0.1.0",
-  "private": true,
+  "description": "DSH 双模式高德出行助手：行程编排 + 沿线地理要素摸底（10 个工具 + skill）",
   "type": "module",
   "main": "./index.mjs",
-  "description": "高德出行工具（双模式：日常/工作）· DSH 插件",
+  "license": "MIT",
+  "author": "TsuyuzakiFarm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TsuyuzakiFarm/dsh-amap-trip.git"
+  },
+  "homepage": "https://github.com/TsuyuzakiFarm/dsh-amap-trip#readme",
+  "bugs": {
+    "url": "https://github.com/TsuyuzakiFarm/dsh-amap-trip/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "amap",
+    "gaode",
+    "maps",
+    "itinerary",
+    "gis",
+    "plugin"
+  ],
+  "files": [
+    "*.mjs",
+    "presets/",
+    "cordis.patch.yml",
+    "cordis.yml"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "dsh": {
     "plugin": true
   }
