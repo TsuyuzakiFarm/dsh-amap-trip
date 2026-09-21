@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 const WS = process.argv[2]
-const DEPLOYED = '/home/abinkaiki/.dsh/profiles/web/plugins/amap-trip/index.mjs'
+const DEPLOYED = process.argv[3] || new URL('../plugin/index.mjs', import.meta.url).href
 const mod = await import(DEPLOYED)
 const reg = []
 mod.apply({ tools: { register: (d) => reg.push(d) } }, {

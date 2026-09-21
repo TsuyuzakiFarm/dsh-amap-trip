@@ -1,6 +1,6 @@
-# amap-trip — 高德出行工具（日常/工作双模式）。回滚：恢复 cordis.patch.yml.bak-amap-trip 后重启。
+# 开发用 overlay（可选）：
+#   cd <DSH 安装目录> && pnpm dsh web --patch <本文件的绝对路径>
+# 注意：patch 里的插件路径必须是绝对路径；config 可全部省略（schema 里有默认值）。
 - insert:
     - id: amap-trip
-      name: '/media/abinkaiki/Win10/dsh-im/amap-trip/plugin/index.mjs'
-      config:
-        envFile: '/home/abinkaiki/.dsh/.env'
+      name: '<仓库绝对路径>/plugin/index.mjs'
