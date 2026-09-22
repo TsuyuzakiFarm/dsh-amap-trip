@@ -52,9 +52,11 @@ bash dsh-amap-trip/scripts/install.sh
 | `wsKey` | 空 | 直接给 key（优先于文件） |
 | `keyNames` | `AMAP_WS_KEY, AMAP_WEB_SERVICE_KEY` | 查找顺序 |
 | `stateDir` | `~/.dsh/amap-trip` | 模式状态与偏好文件 |
-| `cacheDir` / `outDir` | `~/.dsh/amap-trip/{cache,out}` | 缓存与落盘 |
+| `cacheDir` | `~/.dsh/amap-trip/cache` | HTTP 缓存 |
 | `presetsDir` | `<包目录>/presets` | 类别预设 JSON |
-| `workspaceDir` | 进程 cwd | `amap_map` 产物写到 `<workspaceDir>/amap-jsapi/` |
+| `outSubdir` | `amap-trip-production` | 产物目录名，落在**当前会话工作区**下 |
+| `outDir` | 空 | 绝对路径覆盖（留空则按会话工作区推导） |
+| `workspaceDir` | 进程 cwd | 取不到会话工作区时的兜底目录 |
 | `defaultMode` | `daily` | 默认模式 |
 | `allowSavedEndpoints` | `false` | 工作模式是否允许把起终点写进偏好 |
 | `timeoutMs` / `minIntervalMs` / `retries` | 20000 / 250 / 2 | HTTP 行为 |
@@ -69,7 +71,7 @@ bash dsh-amap-trip/scripts/install.sh
 
 **工作**：`从 A 路口到 B 路口，沿线 500 米内的路口/学校/商场/派出所，按里程给地址（叠加实时路况）`
 
-助手会：`amap_corridor {preset:"ops", radiusM:500, withTraffic:true}` → 点位表 + 分段表两份 CSV（`~/.dsh/amap-trip/out/`），需要时 `amap_map` 出图。
+助手会：`amap_corridor {preset:"ops", radiusM:500, withTraffic:true}` → 点位表 + 分段表两份 CSV（`<工作区>/amap-trip-production/`），需要时 `amap_map` 出图（同目录）。
 
 ## 类别预设
 

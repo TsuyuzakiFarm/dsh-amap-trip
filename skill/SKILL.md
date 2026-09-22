@@ -26,7 +26,7 @@ whenToUse: 用户提到出行、行程、路线、自驾、沿线、沿途、勘
 | `amap_traffic` | 交通态势 | 矩形范围；返回整体评价 + 按拥堵排序的路段 |
 | `amap_weather` | 天气实况 | 城市名或 adcode；行程与户外作业前先看一眼 |
 | `amap_corridor` | **走廊检索** | 给起终点 → 采样 → "里程+偏离"清单 + 路线分段表；CSV 落盘。可选 `road`+`city`（把某条路锚定成途经点）、`withTraffic`（按路名叠加实时路况）、`withWeather`、`sort=rating`（日常按评分排） |
-| `amap_map` | **出图** | 把路线+点位渲染成 HTML 地图（内置 JSAPI 埋点与 appname 铁律，产物落到工作区 `amap-jsapi/`） |
+| `amap_map` | **出图** | 把路线+点位渲染成 HTML 地图（内置 JSAPI 埋点与 appname 铁律，产物落到工作区 `amap-trip-production/`） |
 | `amap_mode` | 读/切模式 | 默认类别与参数来自当前模式的偏好文件 |
 | `amap_pref` | 偏好记忆 | 仅当前模式；`read/append/forget`；写入需用户明确表达长期偏好 |
 
@@ -55,18 +55,24 @@ whenToUse: 用户提到出行、行程、路线、自驾、沿线、沿途、勘
 
 ## 5. 可视化交接（复用现有 amap-jsapi-skill）
 
-**首选：直接调 `amap_map`** —— 它已经把下面 4 条铁律内置好了（自动发埋点、回调首行设 appname、产物写工作区 `amap-jsapi/`、自动读 JSAPI 凭据）。
+**首选：直接调 `amap_map`** —— 它已经把下面 4 条铁律内置好了（自动发埋点、回调首行设 appname、产物写工作区 `amap-trip-production/`、自动读 JSAPI 凭据）。
 只有在需要自定义页面（图层、时间轴侧栏、交互）时才手写 JSAPI 代码，并走 `amap-jsapi-skill`，遵守它的铁律：
 
 1. 生成 JSAPI 页面前，先发一次埋点：`curl -s "https://restapi.amap.com/v3/log/init?eventId=skill.call&s=rsv3&product=skill_openclaw&platform=JS&label=generate-code&value=call"`
 2. `AMapLoader.load().then((AMap) => { AMap.getConfig().appname = 'amap-jsapi-skill'; ... })` 必须是回调第一行。
-3. 产物放进工作区 `amap-jsapi/` 目录，文件名 kebab-case。
+3. 产物放进工作区目录（本项目统一为 `amap-trip-production/`），文件名 kebab-case。
 4. Web端 key 与安全密钥从 `~/.dsh/.env` 的 `AMAP_JSAPI_KEY` / `AMAP_SECURITY_JS_CODE` 取；**不要**把 Web服务 key 写进前端页面。
 
 ## 6. 产物与路径
 
-- 插件数据目录：`~/.dsh/amap-trip/`（`profiles/` 偏好、`cache/` HTTP 缓存、`out/` 落盘结果）
+- **产物一律写进当前会话的工作区**：`<工作区>/amap-trip-production/`
+  - 地图：`map-<时间戳>.html`（可直接用浏览器打开）
+  - 点位表：`corridor-<时间戳>.csv`；分段表：`route-nodes-<时间戳>.csv`
+  - 路线几何：`route-<时间戳>.json`
+  - 工具返回里会打印"产物目录 + 工作区来源"，便于核对落在哪个工作区。
+- 插件数据目录仍是：`~/.dsh/amap-trip/`（`profiles/` 偏好、`cache/` HTTP 缓存、`state.json` 模式）。
 - 大结果一律落盘，工具只回摘要；CSV 用 UTF-8 无 BOM，逗号分隔，字段已在表头声明。
+- 若确实需要写到别处：配置 `outDir`（绝对路径覆盖）或 `outSubdir`（默认 `amap-trip-production`）。
 
 ## 7. 常见故障
 

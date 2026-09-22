@@ -22,7 +22,8 @@ export const Config = Schema.object({
   keyNames: Schema.array(Schema.string()).default(['AMAP_WS_KEY', 'AMAP_WEB_SERVICE_KEY']),
   stateDir: Schema.string().default(join(HOME, '.dsh/amap-trip')),
   cacheDir: Schema.string().default(join(HOME, '.dsh/amap-trip/cache')),
-  outDir: Schema.string().default(join(HOME, '.dsh/amap-trip/out')),
+  outDir: Schema.string().default(''),
+  outSubdir: Schema.string().default('amap-trip-production'),
   presetsDir: Schema.string().default(join(HERE, 'presets')),
   workspaceDir: Schema.string().default(process.cwd()),
   defaultMode: Schema.union(['daily', 'ops']).default('daily'),
@@ -89,14 +90,40 @@ function buildMapHtml(o) {
     '}).catch((e) => { document.getElementById("meta").textContent = "地图加载失败: " + e; });\n' +
     '</script>\n</body>\n</html>\n'
 }
-function saveBig(s, cfg, tag) {
-  if (s.length <= cfg.bigBytes) return s
+/** 产出目录解析：优先当前会话的工作区，其次配置，最后进程 cwd。 */
+function resolveWorkdir(cfg, exec) {
+  const s = exec && exec.agent && exec.agent.session
+  const candidates = [
+    ['会话 cwd', s && s.cwd],
+    ['会话 cwd(meta)', s && s.meta && s.meta.cwd],
+    ['配置 workspaceDir', cfg.workspaceDir],
+    ['进程 cwd', process.cwd()]
+  ]
+  for (const pair of candidates) {
+    const v = pair[1]
+    if (typeof v === 'string' && v.trim()) return { base: v.trim(), src: pair[0] }
+  }
+  return { base: process.cwd(), src: '进程 cwd' }
+}
+
+function outputsFor(cfg, exec) {
+  if (cfg.outDir && String(cfg.outDir).trim()) {
+    const d = String(cfg.outDir).trim()
+    return { base: d, src: '配置 outDir（绝对路径覆盖）', outDir: d, mapDir: d }
+  }
+  const w = resolveWorkdir(cfg, exec)
+  const outDir = join(w.base, cfg.outSubdir)
+  return { base: w.base, src: w.src, outDir: outDir, mapDir: outDir }
+}
+
+function saveBig(s, outDir, tag, bigBytes) {
+  if (s.length <= bigBytes) return s
   try {
-    mkdirSync(cfg.outDir, { recursive: true })
-    const p = join(cfg.outDir, tag + '-' + Date.now() + '.json')
+    mkdirSync(outDir, { recursive: true })
+    const p = join(outDir, tag + '-' + Date.now() + '.json')
     writeFileSync(p, s)
     return s.slice(0, 1200) + '\n... (完整内容已落盘: ' + p + ', ' + s.length + ' 字节)'
-  } catch (e) { return s.slice(0, cfg.bigBytes) }
+  } catch (e) { return s.slice(0, bigBytes) }
 }
 
 function makeClient(cfg, signal) {
@@ -152,6 +179,8 @@ export function apply(ctx, config) {
       const lines = []
       const { client, cred } = makeClient(cfg, exec.signal)
       lines.push('配置: mode=' + getMode(cfg.stateDir, cfg.defaultMode) + ' | presets=' + cfg.presetsDir + ' | env=' + cfg.envFile)
+      const wd = resolveWorkdir(cfg, exec)
+      lines.push('产物目录: ' + join(wd.base, cfg.outSubdir) + '（工作区来源: ' + wd.src + '，可通过 Config.workspaceDir 覆盖）')
       lines.push('凭据: ' + (cred.key ? '已找到, 来源=' + cred.source + ', 长度=' + cred.key.length : '✗ 未找到（设置 AMAP_WS_KEY 或 Config.wsKey）'))
       if (!cred.key) return lines.join('\n')
       const probe = async (label, fn) => {
@@ -229,7 +258,8 @@ export function apply(ctx, config) {
           if (p.steps.length > 6) lines.push('   ... 其余 ' + (p.steps.length - 6) + ' 段已省略')
         })
         const geo = { generatedAt: new Date().toISOString(), paths: paths.map((p) => ({ distanceM: p.distanceM, durationS: p.durationS, points: p.points })) }
-        const saved = saveBig(JSON.stringify(geo), cfg, 'route')
+        const outs = outputsFor(cfg, exec)
+        const saved = saveBig(JSON.stringify(geo), outs.outDir, 'route', cfg.bigBytes)
         if (saved.indexOf('已落盘') > 0) lines.push('几何数据: ' + saved.slice(saved.indexOf('已落盘')))
         else lines.push('几何数据(点数少，直接给出): ' + saved.slice(0, 300))
         return lines.join('\n')
@@ -373,12 +403,13 @@ export function apply(ctx, config) {
         // 铁律 1：生成 JSAPI 代码前发一次埋点
         try { await fetch('https://restapi.amap.com/v3/log/init?eventId=skill.call&s=rsv3&product=skill_openclaw&platform=JS&label=generate-code&value=call', { signal: AbortSignal.timeout(8000) }) } catch (e) {}
 
-        const mapDir = join(cfg.workspaceDir, 'amap-jsapi')
+        const outs = outputsFor(cfg, exec)
+        const mapDir = outs.mapDir
         mkdirSync(mapDir, { recursive: true })
-        const file = join(mapDir, 'amap-trip-map-' + Date.now() + '.html')
+        const file = join(mapDir, 'map-' + Date.now() + '.html')
         const html = buildMapHtml({ title, key: jsKey, sec: secCode, route: points, markers })
         writeFileSync(file, html)
-        return '✓ 已生成 HTML 地图: ' + file + '\n  路线点 ' + points.length + ' 个 | 标注 ' + markers.length + ' 个 | ' + html.length + ' 字节\n  凭据: JSAPI key 与安全密钥已按 amap-jsapi-skill 的本地约定内嵌，仅在本机打开，勿上传。'
+        return '✓ 已生成 HTML 地图: ' + file + '\n  路线点 ' + points.length + ' 个 | 标注 ' + markers.length + ' 个 | ' + html.length + ' 字节\n  产物目录: ' + outs.outDir + '（工作区来源: ' + outs.src + '）\n  凭据: JSAPI key 与安全密钥已按 amap-jsapi-skill 的本地约定内嵌，仅在本机打开，勿上传。'
       } catch (e) { return fail(e) }
     }
   })
@@ -583,10 +614,11 @@ export function apply(ctx, config) {
             if (hit) n.congestion = (statusText[hit.status] || hit.status) + ' ' + (hit.speed === null ? '?' : hit.speed) + ' km/h'
           }
         }
-        mkdirSync(cfg.outDir, { recursive: true })
+        const outs = outputsFor(cfg, exec)
+        mkdirSync(outs.outDir, { recursive: true })
         const stamp = Date.now()
-        const csvP = join(cfg.outDir, 'corridor-' + stamp + '.csv')
-        const nodeP = join(cfg.outDir, 'route-nodes-' + stamp + '.csv')
+        const csvP = join(outs.outDir, 'corridor-' + stamp + '.csv')
+        const nodeP = join(outs.outDir, 'route-nodes-' + stamp + '.csv')
         writeFileSync(csvP, toCsv(rows, ['chainageKm', 'deviationM', 'category', 'name', 'typecode', 'address', 'location', 'tel', 'rating', 'cost']))
         writeFileSync(nodeP, toCsv(nodes.map((n) => ({ fromKm: n.fromKm.toFixed(2), toKm: n.toKm.toFixed(2), lengthM: n.lengthM, road: n.road, tags: n.tags.join('/'), congestion: n.congestion || '', instruction: n.instruction })), ['fromKm', 'toKm', 'lengthM', 'road', 'tags', 'congestion', 'instruction']))
         const lines = []
@@ -607,6 +639,7 @@ export function apply(ctx, config) {
         for (const r of rows.slice(0, 12)) lines.push('  ' + r.chainageKm + 'km ±' + Math.round(r.deviationM) + 'm [' + (r.category || '-') + '] ' + r.name + ' | ' + r.address)
         lines.push('CSV: ' + csvP)
         lines.push('分段表: ' + nodeP)
+        lines.push('产物目录: ' + outs.outDir + '（工作区来源: ' + outs.src + '）')
         return lines.join('\n')
       } catch (e) { return fail(e) }
     }

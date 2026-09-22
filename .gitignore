@@ -8,3 +8,4 @@ profiles/
 *.bak*
 *.log
 amap-jsapi/
+amap-trip-production/
