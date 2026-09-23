@@ -1,0 +1,26 @@
+const puppeteer = require('/home/abinkaiki/.dsh/profiles/web/node_modules/puppeteer-core')
+const EXE = process.argv[2], URL_ = process.argv[3]
+const main = async () => {
+  const errs = []
+  const browser = await puppeteer.launch({ executablePath: EXE, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--enable-unsafe-swiftshader'] })
+  const page = await browser.newPage()
+  await page.setViewport({ width: 1200, height: 800 })
+  page.on('pageerror', (e) => errs.push('pageerror: ' + String(e.message).slice(0, 70)))
+  page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text().slice(0, 70)) })
+  await page.goto(URL_, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {})
+  await new Promise((r) => setTimeout(r, 8000))
+  const before = await page.evaluate(() => (window.__m ? JSON.stringify({ zoom: window.__m.getZoom(), center: window.__m.getCenter().toString() }) : 'no __m'))
+  const diagBefore = await page.$eval('#diag', (el) => el.textContent.slice(0, 80)).catch(() => '')
+  console.log('加载后: ' + before + ' | 加载期错误=' + errs.length)
+  if (diagBefore) console.log('  诊断条: ' + diagBefore)
+  errs.slice(0, 4).forEach((e) => console.log('  ' + e))
+  const clicked = await page.evaluate(() => { const li = document.querySelector('#list li'); if (!li) return 'no li'; li.click(); return 'clicked' })
+  await new Promise((r) => setTimeout(r, 2500))
+  const after = await page.evaluate(() => (window.__m ? JSON.stringify({ zoom: window.__m.getZoom(), center: window.__m.getCenter().toString() }) : 'no __m'))
+  console.log('点击点位后: ' + after + ' | 错误总数=' + errs.length)
+  const diagAfter = await page.$eval('#diag', (el) => el.textContent.slice(0, 120)).catch(() => '')
+  if (diagAfter) console.log('  诊断条: ' + diagAfter)
+  console.log('  ' + clicked)
+  await browser.close()
+}
+main().catch((e) => console.log('FAIL ' + e.message))
