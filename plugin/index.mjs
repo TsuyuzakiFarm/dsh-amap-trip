@@ -1,7 +1,8 @@
 // amap-trip · DSH 插件（第一方）
 // 规范：Config 用 Schemastery（默认值+校验）；ctx.tools.register 注册即效果；
 // exec.signal 全链路透传；可调常量全部进 Config。
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs'
+import { zstdDecompressSync } from 'node:zlib'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Schema from '@deepseek-ai/schemastery'
@@ -65,18 +66,74 @@ function splitCsv(text) {
 
 /** 生成 JSAPI 页面（appname 铁律写在回调第一行）。 */
 /** 产出目录解析：优先当前会话的工作区，其次配置，最后进程 cwd。 */
+/** 在对象图里有限深度地找 cwd/workspace 类字段（应对 DSH 内部结构变化，只读不写）。 */
+function digWorkdir(root) {
+  const names = ['cwd', 'workspace', 'workdir', 'workspaceDir', 'directory']
+  const seen = new Set()
+  const queue = [[root, 0]]
+  while (queue.length) {
+    const item = queue.shift()
+    const obj = item[0], depth = item[1]
+    if (!obj || typeof obj !== 'object' || depth > 3 || seen.has(obj)) continue
+    seen.add(obj)
+    for (const n of names) {
+      try {
+        const v = obj[n]
+        if (typeof v === 'string' && v.trim().startsWith('/')) return { base: v.trim(), src: '会话对象.' + n + (depth ? '(d' + depth + ')' : '') }
+      } catch (e) {}
+    }
+    if (seen.size > 40) break
+    for (const k of Object.keys(obj)) {
+      try {
+        const v = obj[k]
+        if (v && typeof v === 'object') queue.push([v, depth + 1])
+      } catch (e) {}
+    }
+  }
+  return null
+}
+
+/** 从 DSH 会话日志首行（header）读 cwd —— 会话日志一定记录了创建时的工作目录。 */
+let sessionCwdCache
+function cwdFromSessionLog() {
+  if (sessionCwdCache !== undefined) return sessionCwdCache
+  sessionCwdCache = null
+  try {
+    const id = process.env.DSH_SESSION_ID
+    if (!id) return sessionCwdCache
+    const home = process.env.DSH_HOME || join(process.env.HOME || '', '.dsh')
+    const base = join(home, 'sessions')
+    for (const proj of readdirSync(base)) {
+      const dir = join(base, proj, id)
+      if (!existsSync(dir)) continue
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.zstd')) continue
+        const text = zstdDecompressSync(readFileSync(join(dir, f))).toString('utf8')
+        const header = JSON.parse(text.split('\n')[0])
+        if (typeof header.cwd === 'string' && header.cwd) sessionCwdCache = header.cwd
+        return sessionCwdCache
+      }
+    }
+  } catch (e) {}
+  return sessionCwdCache
+}
+
 function resolveWorkdir(cfg, exec) {
   const s = exec && exec.agent && exec.agent.session
-  const candidates = [
+  const explicit = [
     ['会话 cwd', s && s.cwd],
-    ['会话 cwd(meta)', s && s.meta && s.meta.cwd],
-    ['配置 workspaceDir', cfg.workspaceDir],
-    ['进程 cwd', process.cwd()]
+    ['会话 meta.cwd', s && s.meta && s.meta.cwd],
+    ['会话 header.cwd', s && s.header && s.header.cwd]
   ]
-  for (const pair of candidates) {
+  for (const pair of explicit) {
     const v = pair[1]
     if (typeof v === 'string' && v.trim()) return { base: v.trim(), src: pair[0] }
   }
+  const dug = digWorkdir(exec && exec.agent) || digWorkdir(s)
+  if (dug) return dug
+  const fromLog = cwdFromSessionLog()
+  if (fromLog) return { base: fromLog, src: '会话日志 cwd' }
+  if (cfg.workspaceDir && String(cfg.workspaceDir).trim()) return { base: String(cfg.workspaceDir).trim(), src: '配置 workspaceDir' }
   return { base: process.cwd(), src: '进程 cwd' }
 }
 
