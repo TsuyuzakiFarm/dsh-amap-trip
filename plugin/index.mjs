@@ -8,6 +8,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { AmapClient, resolveCredential, parseEnv } from './core.mjs'
 import { corridorSearch, nodesFromRoute, resolveCategories, classify, toCsv, CATEGORY_PRESETS } from './corridor.mjs'
 import { getMode, setMode, readPrefs, appendPref, forgetPref, ensureProfile } from './prefs.mjs'
+import { buildMapHtmlV2 } from './map-html.mjs'
 
 export const name = 'amap-trip'
 export const inject = ['tools']
@@ -63,33 +64,6 @@ function splitCsv(text) {
 }
 
 /** 生成 JSAPI 页面（appname 铁律写在回调第一行）。 */
-function buildMapHtml(o) {
-  const json = (v) => JSON.stringify(v).replace(/</g, '\\u003c')
-  return '<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>' + String(o.title).replace(/[<>]/g, '') + '</title>\n' +
-    '<style>html,body{margin:0;height:100%}#map{height:100%}#panel{position:fixed;top:12px;left:12px;max-height:80%;overflow:auto;background:#fff;padding:10px 12px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.2);font:13px/1.6 system-ui,sans-serif;max-width:300px}#panel h3{margin:0 0 6px;font-size:14px}#panel li{margin:2px 0}</style>\n' +
-    '<script>window._AMapSecurityConfig = { securityJsCode: ' + json(o.sec) + ' }</script>\n' +
-    '<script src="https://webapi.amap.com/loader.js?v=2.0&key=' + encodeURIComponent(o.key) + '"></script>\n' +
-    '</head>\n<body>\n<div id="map"></div>\n<div id="panel"><h3>' + String(o.title).replace(/[<>]/g, '') + '</h3><div id="meta"></div><ol id="list" style="padding-left:18px;margin:6px 0 0"></ol></div>\n' +
-    '<script>\nconst ROUTE = ' + json(o.route) + ';\nconst MARKERS = ' + json(o.markers) + ';\n' +
-    'AMapLoader.load({ key: ' + json(o.key) + ', version: "2.0", plugins: [] }).then((AMap) => {\n' +
-    '  AMap.getConfig().appname = "amap-jsapi-skill";\n' +
-    '  const map = new AMap.Map("map", { zoom: 11, center: ROUTE[0], viewMode: "2D" });\n' +
-    '  map.add(new AMap.Polyline({ path: ROUTE, strokeColor: "#1a73e8", strokeWeight: 5, strokeOpacity: 0.9 }));\n' +
-    '  const info = new AMap.InfoWindow({ offset: new AMap.Pixel(0, -30) });\n' +
-    '  const list = document.getElementById("list");\n' +
-    '  MARKERS.forEach((m) => {\n' +
-    '    const mk = new AMap.Marker({ position: m.loc, title: m.name });\n' +
-    '    mk.on("click", () => { info.setContent("<b>" + m.name + "</b><br>" + (m.km ? (m.km + " km · ") : "") + (m.cat || "") ); info.open(map, mk); });\n' +
-    '    map.add(mk);\n' +
-    '    const li = document.createElement("li");\n' +
-    '    li.textContent = (m.km ? m.km + "km " : "") + m.name;\n' +
-    '    list.appendChild(li);\n' +
-    '  });\n' +
-    '  map.setFitView();\n' +
-    '  document.getElementById("meta").textContent = "路线点 " + ROUTE.length + " | 标注 " + MARKERS.length;\n' +
-    '}).catch((e) => { document.getElementById("meta").textContent = "地图加载失败: " + e; });\n' +
-    '</script>\n</body>\n</html>\n'
-}
 /** 产出目录解析：优先当前会话的工作区，其次配置，最后进程 cwd。 */
 function resolveWorkdir(cfg, exec) {
   const s = exec && exec.agent && exec.agent.session
@@ -407,7 +381,7 @@ export function apply(ctx, config) {
         const mapDir = outs.mapDir
         mkdirSync(mapDir, { recursive: true })
         const file = join(mapDir, 'map-' + Date.now() + '.html')
-        const html = buildMapHtml({ title, key: jsKey, sec: secCode, route: points, markers })
+        const html = buildMapHtmlV2({ title, key: jsKey, sec: secCode, route: points, markers })
         writeFileSync(file, html)
         return '✓ 已生成 HTML 地图: ' + file + '\n  路线点 ' + points.length + ' 个 | 标注 ' + markers.length + ' 个 | ' + html.length + ' 字节\n  产物目录: ' + outs.outDir + '（工作区来源: ' + outs.src + '）\n  凭据: JSAPI key 与安全密钥已按 amap-jsapi-skill 的本地约定内嵌，仅在本机打开，勿上传。'
       } catch (e) { return fail(e) }

@@ -9,3 +9,4 @@ profiles/
 *.log
 amap-jsapi/
 amap-trip-production/
+.browsers/
