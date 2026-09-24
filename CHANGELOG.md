@@ -2,6 +2,22 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的结构，版本号用 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 变更
+- **适配 DSH `0.1.7-rc.1` 的插件依赖声明。** 插件此前在包内 `node_modules/` 放了一条指向
+  `~/.npm/_npx/<hash>/node_modules/@deepseek-ai/schemastery` 的绝对软链（`<hash>` 是 npx
+  缓存的内容哈希，DSH 重装一次就断；而且按 0.1.7-rc.1 的新解析规则，物理更近的包会遮蔽宿主实例）。
+  现删除该软链，改为在 `peerDependencies` + `devDependencies` 里声明
+  `@deepseek-ai/schemastery: ~3.18.4`，运行时使用宿主那一份。
+- 新增 `peerDependencies["@deepseek-ai/dsh"]: ">=0.1.5-rc.2"`：接入 0.1.7-rc.1 新增的
+  插件兼容性预检（该预检读 `peerDependencies`，不认自造的 `dsh.engines` 字段）。
+- 新增包内 `README.md` 与 `ADAPTATION.md`（安装、配置项、逐条适配记录），并加入 `files`。
+
+### 未变
+- 插件代码（`index.mjs` / `core.mjs` / `corridor.mjs` / `prefs.mjs` / `map-html.mjs` /
+  `presets/*.json` / `cordis.patch.yml`）逐字节未改；10 个工具的行为不变。
+
 ## [0.1.5] - 2026-09-23
 
 ### 修复

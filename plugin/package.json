@@ -29,12 +29,22 @@
     "*.mjs",
     "presets/",
     "cordis.patch.yml",
-    "cordis.yml"
+    "cordis.yml",
+    "README.md",
+    "ADAPTATION.md"
   ],
   "engines": {
     "node": ">=22"
   },
   "dsh": {
     "plugin": true
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "~3.18.4"
   }
 }
