@@ -84,7 +84,7 @@ export function projectToPolyline(point, points) {
  */
 export const CATEGORY_PRESETS = {
   ops: {
-    crowd: { label: '人员密集', types: '141200|141400|080100|080600|060100|060400|060700|150500|150700' },
+    crowd: { label: '人员密集', types: '141200|141400|080100|080600|060100|060400|060700' },
     emergency: { label: '应急力量', types: '090100|090200|090300|130500|200400' },
     supply: { label: '补给维修', types: '010100|011100|010400' },
     transit: { label: '交通枢纽', types: '150100|150200|150300|150400|150500|150700' }
@@ -98,10 +98,18 @@ export const CATEGORY_PRESETS = {
   }
 }
 
+/** 解析类别：一律按预设定义的顺序返回，而不是调用者的传参顺序。
+ *  原因：classify 取「第一个命中的类别」，而预设允许类别码重叠；若顺序随调用者变化，
+ *  同一份数据会贴出不同标签（例如 crowd/transit 曾共用 150500|150700）。 */
 export function resolveCategories(mode, names, table) {
   const presets = (table && table[mode]) || CATEGORY_PRESETS[mode] || CATEGORY_PRESETS.ops
-  const list = names && names.length ? names : Object.keys(presets)
-  return list.map((n) => (presets[n] ? Object.assign({ key: n }, presets[n]) : { key: n, label: n, types: n }))
+  const declared = Object.keys(presets)
+  const pick = (n) => (presets[n] ? Object.assign({ key: n }, presets[n]) : { key: n, label: n, types: n })
+  if (!names || !names.length) return declared.map(pick)
+  const want = Array.from(new Set(names))
+  return declared.filter((n) => want.indexOf(n) >= 0)
+    .concat(want.filter((n) => declared.indexOf(n) < 0))
+    .map(pick)
 }
 
 /** 按类型码前缀把一条 POI 归到某个类别键（找不到返回 ''）。 */

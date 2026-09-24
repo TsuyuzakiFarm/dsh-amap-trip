@@ -76,6 +76,14 @@ pnpm add link:/path/to/amap-trip
 
 ## 四、更新日志
 
+### 0.1.6（2026-09-24）修复走廊类别标签漂移
+
+- **`resolveCategories()` 固定按预设定义的顺序返回**。`classify()` 取「第一个命中的类别」，
+  顺序若随调用者传参变化，同一份数据会贴出不同标签
+- **`crowd` 不再包含 `150500`（地铁站）/ `150700`（公交站）**，两者归 `transit`（交通枢纽）；
+  预设内不再有跨类别重复的类型码
+- 新增 `scripts/test-categories.mjs`：预设唯一性 / 兜底表与 JSON 一致性 / 顺序无关性 / 标签结果
+
 ### 0.1.5（2026-09-24）适配 DSH 0.1.7-rc.1
 
 - **删掉包内 `node_modules/@deepseek-ai/schemastery` 软链**。它原来指向

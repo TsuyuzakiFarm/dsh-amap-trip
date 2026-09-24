@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-24
+
+### 修复
+- **走廊检索的类别标签不再取决于调用者传参顺序。** `classify()` 取「第一个命中的类别」，
+  而 ops 预设里 `crowd` 与 `transit` 曾共用 `150500`（地铁站）/ `150700`（公交站），于是
+  `categories: ["crowd","transit"]` 会把它们全部标成"人员密集"、让"交通枢纽"永远为空，换个
+  顺序又得到另一套标签。`resolveCategories()` 现固定按**预设定义的顺序**返回。
+- **`crowd`（人员密集）不再包含地铁站与公交站**，两者归 `transit`（交通枢纽），预设内不再有
+  跨类别的重复类型码。同步更新 `presets/ops.json`、代码兜底预设、README 与 `skill/references/ops.md`。
+- 新增 `scripts/test-categories.mjs`：校验预设无重复类型码、兜底表与 JSON 逐项一致、类别顺序
+  与标签结果不随传参顺序变化。
+
 ### 变更
 - **适配 DSH `0.1.7-rc.1` 的插件依赖声明。** 插件此前在包内 `node_modules/` 放了一条指向
   `~/.npm/_npx/<hash>/node_modules/@deepseek-ai/schemastery` 的绝对软链（`<hash>` 是 npx
@@ -67,6 +79,7 @@
 - HTML 出图（JSAPI v2，遵守埋点与 appname 规范）。
 - 工程：`Config` 用 Schemastery 定义与校验、`exec.signal` 取消透传、HTTP 层统一遮蔽 key、响应缓存与 QPS 限速、错误码翻译。
 
+[0.1.6]: https://github.com/TsuyuzakiFarm/dsh-amap-trip/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/TsuyuzakiFarm/dsh-amap-trip/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/TsuyuzakiFarm/dsh-amap-trip/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/TsuyuzakiFarm/dsh-amap-trip/compare/v0.1.2...v0.1.3

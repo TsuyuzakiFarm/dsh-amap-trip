@@ -5,7 +5,7 @@
 
 > A dual-mode Amap (Gaode Maps) assistant for DeepSeek Harness — itinerary planning for daily life, along-route geographic asset surveys for field work.
 
-**当前版本：0.1.5** · 完整变更见 [CHANGELOG.md](CHANGELOG.md)
+**当前版本：0.1.6** · 完整变更见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 功能
 
@@ -81,10 +81,10 @@ bash dsh-amap-trip/scripts/install.sh
 
 | 键 | 含义 | 高德类型码（已实测） |
 |---|---|---|
-| `crowd` | 人员密集 | 141200 学校 · 141400 体育场馆 · 080100 运动场馆 · 080600 影剧院 · 060100 商场 · 060400 超市 · 060700 综合市场 · 150500 地铁站 · 150700 公交站 |
+| `crowd` | 人员密集 | 141200 学校 · 141400 体育场馆 · 080100 运动场馆 · 080600 影剧院 · 060100 商场 · 060400 超市 · 060700 综合市场 |
 | `emergency` | 应急力量 | 090100 医院 · 090200 专科 · 090300 诊所 · 130500 公检法（130501 派出所、130504 消防） · 200400 紧急避难场所 |
 | `supply` | 补给维修 | 010100 加油站 · 011100 充电站 · 010400 汽车维修养护 |
-| `transit` | 交通枢纽 | 1501xx–1507xx |
+| `transit` | 交通枢纽 | 1501xx–1507xx（150500 地铁站 · 150700 公交站） |
 
 `presets/daily.json`：`food` 050000 · `sight` 110000 · `shop` 060000 · `fun` 080000 · `rest` 100000。
 
@@ -129,10 +129,11 @@ bash scripts/install.sh             # 部署到本机 DSH profile
 
 ## 版本与更新
 
-当前版本 **0.1.5**。完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **0.1.6**。完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 | 版本 | 日期 | 要点 |
 |---|---|---|
+| 0.1.6 | 2026-09-24 | 修复走廊类别标签随传参顺序漂移（`crowd` 不再含地铁站/公交站）；适配 DSH `0.1.7-rc.1` 依赖声明 |
 | 0.1.5 | 2026-09-23 | 修复地图"点击点位"报 `Pixel(NaN, NaN)`：标注用数值 LngLat、信息窗延迟创建并按坐标打开 |
 | 0.1.4 | 2026-09-23 | 产物目录改为从会话日志 header 读工作区（多级回退），不再写宿主家目录 |
 | 0.1.3 | 2026-09-23 | **修复地图白屏**（移除 `setFitView`，改用 `Bounds`）；点位清单可折叠；页面内置加载诊断 |
@@ -140,7 +141,7 @@ bash scripts/install.sh             # 部署到本机 DSH profile
 | 0.1.1 | 2026-09-21 | `amap_route`/`amap_poi` 支持中文地址；走廊天气改取 adcode；日常模式默认 v3 |
 | 0.1.0 | 2026-09-21 | 首个版本：10 个工具 + skill + 双模式与偏好隔离 + 走廊检索 + HTML 出图 |
 
-> 升级提示：0.1.2 起产物目录改为**跟随会话工作区**（`<工作区>/amap-trip-production/`）；0.1.3 起地图页需要重新生成才是修复版（旧页面会白屏）。
+> 升级提示：0.1.2 起产物目录改为**跟随会话工作区**（`<工作区>/amap-trip-production/`）；0.1.3 起地图页需要重新生成才是修复版（旧页面会白屏）；0.1.6 起地铁站/公交站的标签由"人员密集"改为"交通枢纽"，若希望它们仍算人员密集，在 `presets/ops.json` 的 `crowd.types` 里加回 `150500|150700` 即可。
 
 ## License
 
