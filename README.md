@@ -5,6 +5,8 @@
 
 > A dual-mode Amap (Gaode Maps) assistant for DeepSeek Harness — itinerary planning for daily life, along-route geographic asset surveys for field work.
 
+**当前版本：0.1.5** · 完整变更见 [CHANGELOG.md](CHANGELOG.md)
+
 ## 功能
 
 - **10 个工具**：`amap_diagnose` `amap_geocode` `amap_route` `amap_poi` `amap_traffic` `amap_weather` `amap_corridor` `amap_map` `amap_mode` `amap_pref`
@@ -107,6 +109,7 @@ plugin/           # DSH 插件包（package.json 在此，作为安装单元）
 skill/            # DSH skill（SKILL.md + references + templates）
 scripts/          # 安装脚本与探针/测试
 docs/             # 接口实测记录
+CHANGELOG.md      # 更新日志
 ```
 
 ## 开发
@@ -123,6 +126,21 @@ bash scripts/install.sh             # 部署到本机 DSH profile
 - 交通事件（施工/管制）接口未接入：未找到公开的 Web 服务路径。
 - 长路线走廊检索受日配额与 QPS 约束，默认 120 个采样点上限；长路线请分段跑。
 - 工作模式类别预设偏宽（健身工作室会落入"人员密集"、诊所会落入"应急力量"），可按任务在 `presets/ops.json` 里收窄。
+
+## 版本与更新
+
+当前版本 **0.1.5**。完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+| 版本 | 日期 | 要点 |
+|---|---|---|
+| 0.1.5 | 2026-09-23 | 修复地图"点击点位"报 `Pixel(NaN, NaN)`：标注用数值 LngLat、信息窗延迟创建并按坐标打开 |
+| 0.1.4 | 2026-09-23 | 产物目录改为从会话日志 header 读工作区（多级回退），不再写宿主家目录 |
+| 0.1.3 | 2026-09-23 | **修复地图白屏**（移除 `setFitView`，改用 `Bounds`）；点位清单可折叠；页面内置加载诊断 |
+| 0.1.2 | 2026-09-22 | 产物统一写入 `<工作区>/amap-trip-production/`；新增 `outSubdir` |
+| 0.1.1 | 2026-09-21 | `amap_route`/`amap_poi` 支持中文地址；走廊天气改取 adcode；日常模式默认 v3 |
+| 0.1.0 | 2026-09-21 | 首个版本：10 个工具 + skill + 双模式与偏好隔离 + 走廊检索 + HTML 出图 |
+
+> 升级提示：0.1.2 起产物目录改为**跟随会话工作区**（`<工作区>/amap-trip-production/`）；0.1.3 起地图页需要重新生成才是修复版（旧页面会白屏）。
 
 ## License
 
