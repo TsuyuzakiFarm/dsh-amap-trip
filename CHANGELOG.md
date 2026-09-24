@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 移除
+- 删除三个过时的开发脚本。`check-schemastery.mjs`：裸 import `@deepseek-ai/schemastery` 已无法
+  解析，其注释里的「在 profile 目录下运行」也不成立（ESM 裸模块解析按**文件位置**走，不看 cwd）。
+  `test-workdir.mjs` / `gen-meixian-map.mjs`：写死了重构前的 `<WS>/amap-trip/plugin/...` 布局，
+  在「包根即 `plugin/`」的当前布局下必然 `ERR_MODULE_NOT_FOUND`；产物目录解析已由
+  `check-outdir.mjs` 覆盖。`scripts/` 不在 npm 发布清单（`files`）内。
+
 ## [0.1.6] - 2026-09-24
 
 ### 修复
