@@ -5,7 +5,7 @@
 
 > A dual-mode Amap (Gaode Maps) assistant for DeepSeek Harness — itinerary planning for daily life, along-route geographic asset surveys for field work.
 
-**当前版本：0.1.6** · 完整变更见 [CHANGELOG.md](CHANGELOG.md)
+**当前版本：0.1.7** · 完整变更见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 功能
 
@@ -121,18 +121,30 @@ node scripts/test-corridor.mjs .    # 走廊检索 + 类别码校验
 bash scripts/install.sh             # 部署到本机 DSH profile
 ```
 
+> **两套部署脚本，职责不同。** 本仓库的 `scripts/install.sh` 是权威：单插件安装/卸载，写
+> profile 的 `package.json` 依赖、`node_modules` 软链、patch insert 行，并同步 `skill/`
+> （支持 `--uninstall` 与 `--dry-run`）。`$DSH_HOME` 之外的 `.work/live-install.sh` 只负责把
+> 三个自制插件**一起**编排部署。两者都**不产出发布快照**（`plugin-backups/<pkg>-<version>/`
+> 与 `npm pack` 产物），这一步目前仍需手工做，且版本目录名必须与 `package.json` 的
+> `version` 一致。
+>
+> 另注：这些脚本要 import 插件代码，因此需要 `@deepseek-ai/schemastery` 可解析；在 DSH
+> 之外用裸 node 跑会报 `ERR_MODULE_NOT_FOUND`，属预期（宿主包只在 DSH 运行期可解析）。
+
 ## 已知限制
 
 - 交通事件（施工/管制）接口未接入：未找到公开的 Web 服务路径。
-- 长路线走廊检索受日配额与 QPS 约束，默认 120 个采样点上限；长路线请分段跑。
+- 长路线走廊检索受日配额与 QPS 约束：默认 120 个采样点，模型可通过 `maxSamples` 调整，但受 `Config.corridor.maxSamplesHardCap`（默认 600）硬性封顶；长路线请分段跑。
+- `amap_map` 依赖**外部 skill `amap-jsapi-skill`**（生成前埋点、`appname` 铁律、产物目录约定都由它规定）。本包未在依赖里声明它：未安装时 `amap_map` 仍能运行，但产出不符合该规范。
 - 工作模式类别预设偏宽（健身工作室会落入"人员密集"、诊所会落入"应急力量"），可按任务在 `presets/ops.json` 里收窄。
 
 ## 版本与更新
 
-当前版本 **0.1.6**。完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **0.1.7**。完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 | 版本 | 日期 | 要点 |
 |---|---|---|
+| 0.1.7 | 2026-09-26 | 审计修复：自建参数校验、`maxSamples` 硬上限、采样循环防死循环、状态根改用 `$DSH_HOME`、缓存按 mtime 修剪、`get` 不再写文件 |
 | 0.1.6 | 2026-09-24 | 修复走廊类别标签随传参顺序漂移（`crowd` 不再含地铁站/公交站）；适配 DSH `0.1.7-rc.1` 依赖声明 |
 | 0.1.5 | 2026-09-23 | 修复地图"点击点位"报 `Pixel(NaN, NaN)`：标注用数值 LngLat、信息窗延迟创建并按坐标打开 |
 | 0.1.4 | 2026-09-23 | 产物目录改为从会话日志 header 读工作区（多级回退），不再写宿主家目录 |
@@ -141,7 +153,7 @@ bash scripts/install.sh             # 部署到本机 DSH profile
 | 0.1.1 | 2026-09-21 | `amap_route`/`amap_poi` 支持中文地址；走廊天气改取 adcode；日常模式默认 v3 |
 | 0.1.0 | 2026-09-21 | 首个版本：10 个工具 + skill + 双模式与偏好隔离 + 走廊检索 + HTML 出图 |
 
-> 升级提示：0.1.2 起产物目录改为**跟随会话工作区**（`<工作区>/amap-trip-production/`）；0.1.3 起地图页需要重新生成才是修复版（旧页面会白屏）；0.1.6 起地铁站/公交站的标签由"人员密集"改为"交通枢纽"，若希望它们仍算人员密集，在 `presets/ops.json` 的 `crowd.types` 里加回 `150500|150700` 即可。
+> 升级提示：0.1.2 起产物目录改为**跟随会话工作区**（`<工作区>/amap-trip-production/`）；0.1.3 起地图页需要重新生成才是修复版（旧页面会白屏）；0.1.6 起地铁站/公交站的标签由"人员密集"改为"交通枢纽"，若希望它们仍算人员密集，在 `presets/ops.json` 的 `crowd.types` 里加回 `150500|150700` 即可；0.1.7 起工具参数会**先经校验**——非法类型 / 枚举 / 越界值直接返回参数错误，不再静默取默认值。
 
 ## License
 

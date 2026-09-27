@@ -23,11 +23,16 @@ export function polylineLength(points) {
 export function samplePolyline(points, stepM, maxSamples) {
   if (!points || points.length === 0) return []
   if (points.length === 1) return [{ point: points[0], chainageM: 0 }]
+  // 归一化：step 必须为正（负步长让 next 单调递减、while 条件恒真），
+  // cap 必须为正整数（它是循环唯一的提前出口，0/NaN 会让守卫失效）。
+  // 兜底数值与 Config.corridor 的默认值保持一致，避免出现第二套默认值。
+  const step = Number.isFinite(stepM) && stepM > 0 ? stepM : 500
+  const cap = Number.isFinite(maxSamples) && maxSamples > 0 ? Math.floor(maxSamples) : 120
   const out = []
   let acc = 0
   let next = 0
   out.push({ point: points[0], chainageM: 0 })
-  next = stepM
+  next = step
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1], b = points[i]
     const segLen = haversine(a, b)
@@ -35,8 +40,8 @@ export function samplePolyline(points, stepM, maxSamples) {
     while (next <= acc + segLen) {
       const t = (next - acc) / segLen
       out.push({ point: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], chainageM: next })
-      next += stepM
-      if (maxSamples && out.length >= maxSamples) return out
+      next += step
+      if (out.length >= cap) return out
     }
     acc += segLen
   }
@@ -138,9 +143,11 @@ export async function corridorSearch(client, opts) {
   const o = opts || {}
   const signal = o.signal || (client && client.signal) || null
   const points = o.points || []
-  const stepM = o.stepM || 400
-  const radiusM = o.radiusM || 300
-  const maxSamples = o.maxSamples || 240
+  // 入参已在 index.mjs 侧用 posNum 收口；这里再兜一层，保证模块被单独调用时也安全。
+  // 兜底数值与 Config.corridor 的默认值保持一致（stepM 500 / radiusM 300 / maxSamples 120）。
+  const stepM = Number.isFinite(o.stepM) && o.stepM > 0 ? o.stepM : 500
+  const radiusM = Number.isFinite(o.radiusM) && o.radiusM > 0 ? o.radiusM : 300
+  const maxSamples = Number.isFinite(o.maxSamples) && o.maxSamples > 0 ? Math.floor(o.maxSamples) : 120
   const source = o.source || 'v5'
   const pageSize = o.pageSize || 25
   const onProgress = o.onProgress

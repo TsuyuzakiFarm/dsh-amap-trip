@@ -282,6 +282,15 @@ else
   say "  skill → $SKILL_DST"
 fi
 
+# 每次内容变化都会留一个 .bak，反复安装就堆一排；只保留最近 3 个。
+KEEP_SKILL_BAK=3
+if [ "$DRY_RUN" != 1 ]; then
+  ls -1dt "$SKILL_DST".bak.* 2>/dev/null | tail -n +$((KEEP_SKILL_BAK + 1)) | while read -r old_bak; do
+    rm -rf "$old_bak"
+    say "  清理旧 skill 备份 $(basename "$old_bak")"
+  done
+fi
+
 # ---------------------------------------------------------------------------
 # 自检
 # ---------------------------------------------------------------------------

@@ -76,6 +76,17 @@ pnpm add link:/path/to/amap-trip
 
 ## 四、更新日志
 
+### 0.1.7（2026-09-26）参数校验与健壮性修复
+
+- **补上工具参数校验**。内核**不会**为原始 JSON Schema 的入参代校验（契约是 raw `ToolDefinition`
+  自行校验），现由 `registerTool` 在全部 10 个工具的 `execute` 前统一校验类型 / 枚举 / 必填 /
+  未知字段 / 数值范围——此前 `amap_mode({action: 123})` 这类入参会直达业务逻辑
+- **`maxSamples` 加硬上限**（`Config.corridor.maxSamplesHardCap`，默认 600）：原先该参数可被
+  任意覆盖，而每个采样点要发一次 POI 请求；采样循环的提前出口也不再依赖真值判断，负步长已拦截
+- **状态根改用 `$DSH_HOME`**。此前只认 `$HOME`，隔离 / 多实例场景会写真实 home，与生产互相污染
+- 缓存按 mtime 修剪（`Config.cacheMaxFiles`，默认 2000）；`amap_mode` 的 `get` 不再创建偏好文件
+- 埋点外呼提为 `Config.skillBeaconUrl`（置空即关闭）；删除无人读取的 `dsh.plugin` 字段
+
 ### 0.1.6（2026-09-24）修复走廊类别标签漂移
 
 - **`resolveCategories()` 固定按预设定义的顺序返回**。`classify()` 取「第一个命中的类别」，

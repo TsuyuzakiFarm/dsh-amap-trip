@@ -8,22 +8,31 @@ import { fileURLToPath } from 'node:url'
 import Schema from '@deepseek-ai/schemastery'
 import { AmapClient, resolveCredential, parseEnv } from './core.mjs'
 import { corridorSearch, nodesFromRoute, resolveCategories, classify, toCsv, CATEGORY_PRESETS } from './corridor.mjs'
-import { getMode, setMode, readPrefs, appendPref, forgetPref, ensureProfile } from './prefs.mjs'
+import { getMode, setMode, readPrefs, appendPref, forgetPref, ensureProfile, profilePath } from './prefs.mjs'
 import { buildMapHtmlV2 } from './map-html.mjs'
 
 export const name = 'amap-trip'
 export const inject = ['tools']
 
 const HOME = process.env.HOME || ''
+/**
+ * 状态根：优先 `$DSH_HOME`（隔离 / 多实例 / 测试场景），退回 `~/.dsh`。
+ *
+ * 此前只用 `$HOME`，导致 `DSH_HOME` 被覆盖时插件仍写真实 home ——
+ * 隔离实例与生产会互相污染（实测隔离环境里插件在 `.work/home017` 下写了 0 个文件）。
+ */
+const DSH_HOME = process.env.DSH_HOME || join(HOME, '.dsh')
 const HERE = dirname(fileURLToPath(import.meta.url))
 
 /** 插件配置：默认值写在 schema 字段上，由 Cordis 校验并填充。 */
 export const Config = Schema.object({
-  envFile: Schema.string().default(join(HOME, '.dsh/.env')),
+  envFile: Schema.string().default(join(DSH_HOME, '.env')),
   wsKey: Schema.string().default(''),
   keyNames: Schema.array(Schema.string()).default(['AMAP_WS_KEY', 'AMAP_WEB_SERVICE_KEY']),
-  stateDir: Schema.string().default(join(HOME, '.dsh/amap-trip')),
-  cacheDir: Schema.string().default(join(HOME, '.dsh/amap-trip/cache')),
+  stateDir: Schema.string().default(join(DSH_HOME, 'amap-trip')),
+  cacheDir: Schema.string().default(join(DSH_HOME, 'amap-trip/cache')),
+  /** 缓存目录保留的最大文件数（按 mtime 修剪；TTL 只决定是否命中，不清理文件）。 */
+  cacheMaxFiles: Schema.number().default(2000),
   outDir: Schema.string().default(''),
   outSubdir: Schema.string().default('amap-trip-production'),
   presetsDir: Schema.string().default(join(HERE, 'presets')),
@@ -34,15 +43,118 @@ export const Config = Schema.object({
   minIntervalMs: Schema.number().default(250),
   retries: Schema.number().default(2),
   bigBytes: Schema.number().default(4096),
+  /**
+   * 生成 JSAPI 代码前的外呼埋点（amap-jsapi-skill 规范要求）。
+   * 单独成项是为了可见、可关（置空字符串即关闭）；超时复用 timeoutMs。
+   */
+  skillBeaconUrl: Schema.string().default('https://restapi.amap.com/v3/log/init?eventId=skill.call&s=rsv3&product=skill_openclaw&platform=JS&label=generate-code&value=call'),
   corridor: Schema.object({
     stepM: Schema.number().default(500),
     radiusM: Schema.number().default(300),
     maxSamples: Schema.number().default(120),
+    /** 采样点硬上限：模型传入的 maxSamples 只能在此天花板内调整，防止单次调用被放大成海量请求。 */
+    maxSamplesHardCap: Schema.number().default(600),
     pageSize: Schema.number().default(25)
-  }).default({ stepM: 500, radiusM: 300, maxSamples: 120, pageSize: 25 })
+  }).default({ stepM: 500, radiusM: 300, maxSamples: 120, maxSamplesHardCap: 600, pageSize: 25 })
 })
 
 function text(s) { return [{ type: 'text', text: String(s) }] }
+
+/**
+ * 取「正数」入参：非有限值或 ≤0 → 回退到 fallback，最后可夹到上限 cap。
+ *
+ * 本插件走的是原始 JSON Schema 路径，内核**不会**校验参数
+ * （docs/subsystems/tools.md：a raw `ToolDefinition` validates its own input），
+ * 因此每个数值入参都必须在这里收口：否则 NaN 会让下游 `if (maxSamples && …)`
+ * 守卫失效，负数步长会让采样循环条件恒真。
+ */
+function posNum(value, fallback, cap) {
+  const n = Number(value)
+  const base = Number.isFinite(n) && n > 0 ? n : fallback
+  return cap === undefined ? base : Math.min(base, cap)
+}
+
+/**
+ * 参数校验：本插件的参数以**原始 JSON Schema** 声明。
+ *
+ * 内核不会代为校验（docs/subsystems/tools.md：raw `ToolDefinition` validates
+ * its own input；`defineTool` 那条路要求把参数改写成扁平 DSL，而本插件用不到
+ * 内核的类型推导），因此校验责任在这里补上——否则类型/枚举/范围约束形同虚设，
+ * 非法值会一路传到采样与请求逻辑（历史上 NaN 与负步长都能直接穿透）。
+ *
+ * 只覆盖本插件实际用到的子集；遇到未支持的关键字**直接报错**而不是静默放过，
+ * 避免以后往 schema 里加了约束却没人执行。
+ */
+const ROOT_KEYS = new Set(['type', 'properties', 'required', 'additionalProperties'])
+const NODE_KEYS = new Set(['type', 'description', 'enum', 'items', 'minimum', 'maximum'])
+
+function checkNode(schema, value, path) {
+  for (const key of Object.keys(schema)) {
+    if (!NODE_KEYS.has(key)) return path + ' 的 schema 用了未支持的校验关键字「' + key + '」'
+  }
+  const t = schema.type
+  if (t === 'string') {
+    if (typeof value !== 'string') return path + ' 必须是字符串'
+  } else if (t === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return path + ' 必须是有限数字'
+  } else if (t === 'boolean') {
+    if (typeof value !== 'boolean') return path + ' 必须是布尔值'
+  } else if (t === 'array') {
+    if (!Array.isArray(value)) return path + ' 必须是数组'
+    if (schema.items) {
+      for (let i = 0; i < value.length; i++) {
+        const bad = checkNode(schema.items, value[i], path + '[' + i + ']')
+        if (bad) return bad
+      }
+    }
+  } else {
+    return path + ' 的 schema 类型未支持：' + String(t)
+  }
+  if (Array.isArray(schema.enum) && !schema.enum.some((e) => Object.is(e, value))) {
+    return path + ' 只能是 ' + schema.enum.join(' / ')
+  }
+  if (typeof value === 'number') {
+    if (typeof schema.minimum === 'number' && value < schema.minimum) return path + ' 不能小于 ' + schema.minimum
+    if (typeof schema.maximum === 'number' && value > schema.maximum) return path + ' 不能大于 ' + schema.maximum
+  }
+  return null
+}
+
+/** 校验模型传入的参数，返回可读错误串；`null` 表示通过。 */
+function validateArgs(schema, args) {
+  for (const key of Object.keys(schema)) {
+    if (!ROOT_KEYS.has(key)) return '根 schema 用了未支持的关键字「' + key + '」'
+  }
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) return '参数必须是一个对象'
+  const props = schema.properties || {}
+  for (const name of schema.required || []) {
+    if (args[name] === undefined || args[name] === null) return '缺少必填参数「' + name + '」'
+  }
+  if (schema.additionalProperties === false) {
+    for (const name of Object.keys(args)) {
+      if (!Object.hasOwn(props, name)) return '未知参数「' + name + '」'
+    }
+  }
+  for (const [name, value] of Object.entries(args)) {
+    if (value === undefined || value === null) continue
+    const node = props[name]
+    if (node === undefined) continue
+    const bad = checkNode(node, value, name)
+    if (bad !== null) return bad
+  }
+  return null
+}
+
+/** 注册工具并统一前置参数校验；返回的 disposer 语义与 `ctx.tools.register` 一致。 */
+function registerTool(ctx, def) {
+  return ctx.tools.register(Object.assign({}, def, {
+    async execute(args, exec) {
+      const bad = validateArgs(def.parameters, args)
+      if (bad !== null) return '✗ 参数错误：' + bad
+      return def.execute(args, exec)
+    }
+  }))
+}
 
 /** 极简 CSV 解析（支持双引号包裹与 "" 转义）。 */
 function splitCsv(text) {
@@ -93,16 +205,22 @@ function digWorkdir(root) {
   return null
 }
 
-/** 从 DSH 会话日志首行（header）读 cwd —— 会话日志一定记录了创建时的工作目录。 */
-let sessionCwdCache
+/**
+ * 从 DSH 会话日志首行（header）读 cwd —— 服务层都拿不到时的最后兜底。
+ *
+ * 这条路径要解压会话归档、耦合持久化首行格式，因此做了两处收口：
+ * - 缓存**按会话 id 分键**（此前是进程级单值缓存，同一宿主进程内切换会话会串味）；
+ * - 真正失败时告警一次，避免格式变动后静默失效。
+ */
+let sessionCwdCache = { key: '', value: null }
+let warnedSessionLog = false
 function cwdFromSessionLog() {
-  if (sessionCwdCache !== undefined) return sessionCwdCache
-  sessionCwdCache = null
+  const id = process.env.DSH_SESSION_ID || ''
+  if (!id) return null
+  if (sessionCwdCache.key === id) return sessionCwdCache.value
+  sessionCwdCache = { key: id, value: null }
   try {
-    const id = process.env.DSH_SESSION_ID
-    if (!id) return sessionCwdCache
-    const home = process.env.DSH_HOME || join(process.env.HOME || '', '.dsh')
-    const base = join(home, 'sessions')
+    const base = join(DSH_HOME, 'sessions')
     for (const proj of readdirSync(base)) {
       const dir = join(base, proj, id)
       if (!existsSync(dir)) continue
@@ -110,12 +228,16 @@ function cwdFromSessionLog() {
         if (!f.endsWith('.zstd')) continue
         const text = zstdDecompressSync(readFileSync(join(dir, f))).toString('utf8')
         const header = JSON.parse(text.split('\n')[0])
-        if (typeof header.cwd === 'string' && header.cwd) sessionCwdCache = header.cwd
-        return sessionCwdCache
+        if (typeof header.cwd === 'string' && header.cwd) sessionCwdCache.value = header.cwd
+        return sessionCwdCache.value
       }
     }
   } catch (e) {}
-  return sessionCwdCache
+  if (!warnedSessionLog) {
+    warnedSessionLog = true
+    console.warn('amap-trip: 兜底读会话日志取 cwd 失败（DSH 持久化格式可能已变）；产物目录将改用 Config.workspaceDir')
+  }
+  return sessionCwdCache.value
 }
 
 function resolveWorkdir(cfg, exec) {
@@ -163,7 +285,7 @@ function makeClient(cfg, signal) {
     : resolveCredential({ envFile: cfg.envFile, names: cfg.keyNames })
   const client = new AmapClient({
     key: cred.key, cacheDir: cfg.cacheDir, timeoutMs: cfg.timeoutMs,
-    minIntervalMs: cfg.minIntervalMs, retries: cfg.retries, signal
+    minIntervalMs: cfg.minIntervalMs, retries: cfg.retries, cacheMaxFiles: cfg.cacheMaxFiles, signal
   })
   return { client, cred }
 }
@@ -201,7 +323,7 @@ export function apply(ctx, config) {
   const cfg = Config(config || {})
   const presets = loadPresets(cfg)
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_diagnose',
     description: '检查高德凭据与各接口可用性（凭据来源、地理编码/路径规划/POI/路况/天气探针）。排查 key 平台权限或网络问题时先跑它。',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
@@ -230,7 +352,7 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_geocode',
     description: '地名 → 坐标（可含城市限定）。返回格式化地址、坐标(GCJ-02)、匹配级别。批量请多次调用。',
     parameters: {
@@ -254,7 +376,7 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_route',
     description: '路径规划（v5）：driving/walking/bicycling。返回各备选方案的距离/用时/步数与转向级分段；完整几何落盘。',
     parameters: {
@@ -298,20 +420,20 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_poi',
     description: 'POI 检索。周边搜索给 location+radius；关键字搜索给 keywords+region。source=v3 返回评分/人均/电话（日常用），source=v5 支持 types/城市限定/更大分页（工作用）。',
     parameters: {
       type: 'object',
       properties: {
         location: { type: 'string', description: '周边搜索中心点：地址或 "lng,lat"' },
-        radius: { type: 'number', description: '周边搜索半径（米，默认 1000）' },
+        radius: { type: 'number', minimum: 1, description: '周边搜索半径（米，默认 1000）' },
         keywords: { type: 'string', description: '关键字' },
         types: { type: 'string', description: 'POI 类型编码（高德分类码，如 141200 学校、050000 餐饮）' },
         region: { type: 'string', description: '关键字搜索的城市/区域限定' },
         source: { type: 'string', enum: ['v3', 'v5'], description: '接口版本，默认 v5' },
-        pageSize: { type: 'number', description: '每页条数（默认 10，最大 25）' },
-        page: { type: 'number', description: '页码（默认 1）' }
+        pageSize: { type: 'number', minimum: 1, maximum: 25, description: '每页条数（默认 10，最大 25）' },
+        page: { type: 'number', minimum: 1, description: '页码（默认 1）' }
       },
       additionalProperties: false
     },
@@ -340,7 +462,7 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_traffic',
     description: '交通态势（按矩形范围）：整体拥堵评价 + 路段列表（名称/拥堵等级/速度/粗略几何）。矩形格式 "minLng,minLat;maxLng,maxLat"。',
     parameters: {
@@ -348,7 +470,7 @@ export function apply(ctx, config) {
       properties: {
         rectangle: { type: 'string', description: '"minLng,minLat;maxLng,maxLat"' },
         level: { type: 'number', description: '道路等级过滤（默认 6=全部）' },
-        top: { type: 'number', description: '返回最拥堵的前 N 条（默认 15）' }
+        top: { type: 'number', minimum: 1, description: '返回最拥堵的前 N 条（默认 15）' }
       },
       required: ['rectangle'],
       additionalProperties: false
@@ -382,7 +504,7 @@ export function apply(ctx, config) {
     }
   }
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_map',
     description: '把路线与点位渲染成一张本地可打开的 HTML 地图（高德 JSAPI v2）。遵守 amap-jsapi-skill 规范：生成前发一次埋点、回调首行设置 appname、产物写入工作区 amap-jsapi/ 目录。',
     parameters: {
@@ -431,8 +553,11 @@ export function apply(ctx, config) {
           }
         }
 
-        // 铁律 1：生成 JSAPI 代码前发一次埋点
-        try { await fetch('https://restapi.amap.com/v3/log/init?eventId=skill.call&s=rsv3&product=skill_openclaw&platform=JS&label=generate-code&value=call', { signal: AbortSignal.timeout(8000) }) } catch (e) {}
+        // 铁律 1：生成 JSAPI 代码前发一次埋点（amap-jsapi-skill 规范要求）。
+        // 地址与开关走 Config；超时复用 cfg.timeoutMs，不再单独硬编码 8s。
+        if (cfg.skillBeaconUrl) {
+          try { await fetch(cfg.skillBeaconUrl, { signal: AbortSignal.timeout(cfg.timeoutMs) }) } catch (e) {}
+        }
 
         const outs = outputsFor(cfg, exec)
         const mapDir = outs.mapDir
@@ -445,7 +570,7 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_weather',
     description: '天气查询（实况）：按城市名或 adcode 查当前天气，用于行程与户外作业的天气判断。',
     parameters: {
@@ -465,7 +590,7 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_mode',
     description: '查看或切换工作模式。daily=日常（吃玩购+个人偏好），ops=工作（人员密集/应急/补给/枢纽，中性事实清单）。模式决定默认类别、默认参数与偏好文件，两套偏好互不可见。',
     parameters: {
@@ -488,8 +613,9 @@ export function apply(ctx, config) {
           const allSet = resolveCategories(args.mode, null, presets).map((c) => c.key + '(' + c.label + ')').join(' / ')
           return '✓ 已切换到 ' + s.mode + ' 模式\n偏好/默认值文件: ' + p + '\n生效默认: 类别=' + (d.categories.map((c) => c.key).join(',') || '(预设全部)') + ' | 走廊 ' + d.radiusM + 'm | 步长 ' + d.stepM + 'm\n可用类别: ' + allSet
         }
+        // 只读：get 不创建偏好文件（文件留到首次真正写入偏好时再出现）。
         const mode = getMode(cfg.stateDir, cfg.defaultMode)
-        const p = ensureProfile(mode, cfg.stateDir)
+        const p = profilePath(mode, cfg.stateDir)
         const d = prefsDefaults(cfg, presets)
         const allSet = resolveCategories(mode, null, presets).map((c) => c.key + '(' + c.label + ')').join(' / ')
         return '当前模式: ' + mode + '\n偏好文件: ' + p + '\n默认类别: ' + (d.categories.map((c) => c.key).join(',') || '(预设全部)') + '\n默认参数: 走廊 ' + d.radiusM + 'm | 步长 ' + d.stepM + 'm\n可用类别: ' + allSet
@@ -497,7 +623,7 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_pref',
     description: '偏好记忆（仅当前模式的文件）：read/append/forget。只应在用户明确表达长期偏好时 append。跨模式写入会被拒绝——需要先 amap_mode 切换。',
     parameters: {
@@ -546,7 +672,7 @@ export function apply(ctx, config) {
     }
   })
 
-  ctx.tools.register({
+  registerTool(ctx, {
     name: 'amap_corridor',
     description: '走廊检索：给起终点规划路线，沿路按步长采样检索指定类别点位，输出去重后的「里程+偏离」清单（CSV 落盘），并给出路线分段表（路口/桥隧口，带里程区间）。工作模式用于沿线要素摸底，日常模式用于沿途找吃/玩/补给。',
     parameters: {
@@ -557,11 +683,11 @@ export function apply(ctx, config) {
         waypoints: { type: 'array', items: { type: 'string' }, description: '途经点（可选，地址或坐标）' },
         preset: { type: 'string', enum: ['ops', 'daily'], description: '类别预设，默认 ops' },
         categories: { type: 'array', items: { type: 'string' }, description: 'ops: crowd|emergency|supply|transit；daily: food|sight|shop|fun|rest（默认该预设全部）' },
-        stepM: { type: 'number', description: '采样步长（米，默认 500）' },
-        radiusM: { type: 'number', description: '走廊半径（米，默认 300）' },
+        stepM: { type: 'number', minimum: 1, description: '采样步长（米，默认 500）' },
+        radiusM: { type: 'number', minimum: 1, description: '走廊半径（米，默认 300）' },
         source: { type: 'string', enum: ['v3', 'v5'], description: 'POI 接口版本，默认 v5' },
-        maxSamples: { type: 'number', description: '采样点上限（默认取配置）' },
-        routeIndex: { type: 'number', description: '用第几条备选路线（默认 1）' },
+        maxSamples: { type: 'number', minimum: 1, description: '采样点上限（默认取配置，天花板见 Config.corridor.maxSamplesHardCap）' },
+        routeIndex: { type: 'number', minimum: 1, description: '用第几条备选路线（默认 1）' },
         road: { type: 'string', description: '可选：想贴着走的道路名（如「G104」「阜通东大街」）。会解析成锚定途经点，几何仍由路径规划给出' },
         city: { type: 'string', description: '可选：道路名所在城市，提高解析命中' },
         withTraffic: { type: 'boolean', description: '可选：叠加实时路况（按路名对齐到分段表，并给拥堵摘要）' },
@@ -599,9 +725,12 @@ export function apply(ctx, config) {
         const cats = resolveCategories(preset, wantCats, presets)
         const types = Array.from(new Set(cats.map((c) => c.types).join('|').split('|'))).join('|')
         const res = await corridorSearch(client, {
-          points: path.points, stepM: args.stepM || d.stepM, radiusM: args.radiusM || d.radiusM,
+          points: path.points,
+          stepM: posNum(args.stepM, d.stepM),
+          radiusM: posNum(args.radiusM, d.radiusM),
           source: args.source || (preset === 'daily' ? 'v3' : 'v5'), pageSize: cfg.corridor.pageSize, types, categories: cats,
-          maxSamples: args.maxSamples || cfg.corridor.maxSamples, signal: exec.signal
+          maxSamples: Math.floor(posNum(args.maxSamples, cfg.corridor.maxSamples, cfg.corridor.maxSamplesHardCap)),
+          signal: exec.signal
         })
         const nodes = nodesFromRoute(path)
         const rows = res.rows.map((r) => { const k = classify(r.typecode, cats); return Object.assign({}, r, { category: (cats.find((c) => c.key === k) || {}).label || k, chainageKm: (r.chainageM / 1000).toFixed(2) }) })

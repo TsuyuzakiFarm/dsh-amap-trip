@@ -1,10 +1,10 @@
 // amap-trip · 零依赖核心（P1a）：凭据 / HTTP / 缓存 / 错误翻译 / 查询原语
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 
 export const KEY_NAMES = ['AMAP_WS_KEY', 'AMAP_WEB_SERVICE_KEY', 'AMAP_JSAPI_KEY']
-export const DEFAULT_ENV_FILE = join(process.env.HOME || '', '.dsh/.env')
+export const DEFAULT_ENV_FILE = join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), '.env')
 export const BASE = 'https://restapi.amap.com'
 
 export function parseEnv(text) {
@@ -122,6 +122,8 @@ export class AmapClient {
     this.retries = c.retries === undefined ? 2 : c.retries
     this.minIntervalMs = c.minIntervalMs === undefined ? 220 : c.minIntervalMs
     this.ttl = Object.assign({ geocode: 2592000000, poi: 604800000, route: 86400000, traffic: 0, weather: 21600000 }, c.ttl)
+    this.cacheMaxFiles = c.cacheMaxFiles === undefined ? 2000 : c.cacheMaxFiles
+    this._writes = 0
     this.stats = { calls: 0, cacheHits: 0, retries: 0, errors: 0 }
     this.signal = c.signal || null
     this._last = 0
@@ -144,7 +146,28 @@ export class AmapClient {
   }
 
   writeCache(file, body) {
-    try { writeFileSync(file, JSON.stringify({ t: Date.now(), body })) } catch (e) {}
+    try {
+      writeFileSync(file, JSON.stringify({ t: Date.now(), body }))
+      // 缓存目录没有天然上限：TTL 只决定「是否命中」，过期文件不会自己消失。
+      // 每 200 次写入做一次按 mtime 的修剪，避免无界增长。
+      this._writes++
+      if (this._writes % 200 === 0) this.pruneCache()
+    } catch (e) {}
+  }
+
+  /** 按 mtime 从新到旧保留 cacheMaxFiles 个缓存文件，多余的删除。 */
+  pruneCache() {
+    try {
+      const names = readdirSync(this.cacheDir).filter((f) => f.endsWith('.json'))
+      if (names.length <= this.cacheMaxFiles) return
+      const items = names.map((f) => {
+        const p = join(this.cacheDir, f)
+        let m = 0
+        try { m = statSync(p).mtimeMs } catch (e) {}
+        return { p, m }
+      }).sort((a, b) => b.m - a.m)
+      for (const it of items.slice(this.cacheMaxFiles)) { try { unlinkSync(it.p) } catch (e) {} }
+    } catch (e) {}
   }
 
   async call(path, params, kind) {

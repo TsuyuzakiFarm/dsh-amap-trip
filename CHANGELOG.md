@@ -11,6 +11,28 @@
   在「包根即 `plugin/`」的当前布局下必然 `ERR_MODULE_NOT_FOUND`；产物目录解析已由
   `check-outdir.mjs` 覆盖。`scripts/` 不在 npm 发布清单（`files`）内。
 
+## [0.1.7] - 2026-09-26
+
+本轮为**审计驱动**的修复（依据 `dsh-plugin-dev` 的三条硬规则与原始 JSON Schema 的工具契约）。
+
+### 修复
+- **参数校验缺失（安全）。** 本插件用原始 JSON Schema 声明参数，按 DSH 契约「raw `ToolDefinition` 自行校验入参」内核不会代校验，此前类型 / `required` / `enum` / `additionalProperties` 全部形同虚设——实测 `amap_mode({action: 123})` 会被接受并执行。现用 `registerTool` 包装器在**全部 10 个工具**的 `execute` 前统一校验，并为流入请求的数值参数补上 `minimum` / `maximum` 声明。
+- **`maxSamples` 无上限（配额放大）。** `amap_corridor` 的 `maxSamples` 可被模型任意覆盖，而每个采样点要发一次 POI 请求、间隔 250ms —— 传 `100000` 即约 7 小时 / 10 万次调用。现加 `Config.corridor.maxSamplesHardCap`（默认 600）硬性封顶，工具描述同步改为「天花板见 Config」。
+- **采样循环可死循环。** `samplePolyline` 的 `while` 唯一提前出口写作 `if (maxSamples && …)`，依赖真值判断；配合负 `stepM`（`||` 拦不住负数），当 `maxSamples` 为 `0` 时循环条件恒真。现归一化为 `step > 0` 且 `cap` 为正整数，并对入参用 `posNum` 统一收口（非法/非正 → 回退，越界 → 夹取）。
+- **状态根不跟随 `$DSH_HOME`。** `stateDir` / `cacheDir` / `envFile` 的默认值原先只基于 `$HOME`，`DSH_HOME` 被覆盖时（隔离 / 多实例 / 测试）插件仍写真实 home，与生产互相污染——实测隔离实例在 `.work/home017` 下写了 0 个文件。现统一以 `$DSH_HOME` 为根。
+- **缓存目录无界增长。** TTL 只决定「是否命中」，过期文件不会自己消失（实测累积到 125 个文件 / 1.9M）。现每 200 次写入按 mtime 修剪一次，保留 `Config.cacheMaxFiles`（默认 2000）个。
+- **`amap_mode` 的 `get` 有写副作用。** get 分支会 `ensureProfile` 创建偏好文件，使「查看模式」也写盘。现 `readPrefs` 改为纯只读、get 分支改用 `profilePath`，文件留到首次真正写入偏好时才创建。
+- **会话 cwd 兜底缓存会串味。** `sessionCwdCache` 原为进程级单值缓存且永不失效，同一宿主进程内切换会话会拿到旧值。现按会话 id 分键，并在兜底失败时告警一次（不再静默）。
+
+### 变更
+- 埋点外呼提为 `Config.skillBeaconUrl`（置空即关闭），超时改用 `Config.timeoutMs`，不再单独硬编码 8s。
+- 删除 `package.json` 里**无人读取**的 `dsh.plugin` 字段（内核只认 `dsh.bundle.patch` 与 `dsh.profile.bundles`；实测 `dsh-plugin-manager` 以 `dsh?.bundle?.patch === undefined` 判定「不是 bundle」）。`cordis.patch.yml` 补充说明它只是挂载行参考、不是自激活层。
+- 收敛默认值：`corridor.mjs` 的内部兜底改为与 `Config.corridor` 一致（500 / 300 / 120），消除第二套默认值。
+- `scripts/install.sh` 只保留最近 3 个 skill 备份，避免反复安装堆积 `.bak`。
+
+### 未变
+- 10 个工具的名称、描述、参数的**线格式**与输出格式未改；新增的 `minimum` / `maximum` 只是补上原本就该有的约束。
+
 ## [0.1.6] - 2026-09-24
 
 ### 修复
@@ -86,6 +108,7 @@
 - HTML 出图（JSAPI v2，遵守埋点与 appname 规范）。
 - 工程：`Config` 用 Schemastery 定义与校验、`exec.signal` 取消透传、HTTP 层统一遮蔽 key、响应缓存与 QPS 限速、错误码翻译。
 
+[0.1.7]: https://github.com/TsuyuzakiFarm/dsh-amap-trip/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/TsuyuzakiFarm/dsh-amap-trip/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/TsuyuzakiFarm/dsh-amap-trip/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/TsuyuzakiFarm/dsh-amap-trip/compare/v0.1.3...v0.1.4

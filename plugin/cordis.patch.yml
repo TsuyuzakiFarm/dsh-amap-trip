@@ -1,4 +1,10 @@
-# amap-trip 作为标准插件包时的挂载行（profile 的 patch 层按包名挂载本插件）。
+# amap-trip 的**挂载行参考**（不是自激活的配置层）。
+#
+# 本包没有声明 `dsh.bundle`，所以 `dsh plugin add` 只会把它装成普通依赖、不会激活
+# 任何层（dsh-app-boot / dsh-plugin-manager 只认 `dsh.bundle.patch`）。
+# 实际挂载由 profile 自己的 cordis.patch.yml 里同名 insert 行完成。
+# 若想让本文件成为自激活层，把 package.json 改成：
+#   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 - insert:
     - id: amap-trip
       name: amap-trip

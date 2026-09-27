@@ -87,9 +87,11 @@ export function ensureProfile(mode, stateDir) {
   return p
 }
 
+/** 读取偏好：**只读**，文件不存在时按空偏好处理，不创建文件。 */
 export function readPrefs(mode, stateDir) {
-  const p = ensureProfile(mode, stateDir)
-  const raw = readFileSync(p, 'utf8')
+  const p = profilePath(mode, stateDir)
+  let raw = ''
+  try { raw = readFileSync(p, 'utf8') } catch (e) { raw = '' }
   const sections = {}
   let cur = '(未分节)'
   sections[cur] = []
