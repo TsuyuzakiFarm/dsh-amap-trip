@@ -5,7 +5,7 @@
 
 > A dual-mode Amap (Gaode Maps) assistant for DeepSeek Harness — itinerary planning for daily life, along-route geographic asset surveys for field work.
 
-**当前版本：0.1.7** · 完整变更见 [CHANGELOG.md](CHANGELOG.md)
+**当前版本：0.1.8** · 完整变更见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 功能
 
@@ -163,10 +163,11 @@ bash scripts/install.sh             # 部署到本机 DSH profile
 
 ## 版本与更新
 
-当前版本 **0.1.7**。完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **0.1.8**。完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 | 版本 | 日期 | 要点 |
 |---|---|---|
+| 0.1.8 | 2026-10-03 | 适配 DSH `0.2.1-alpha.1`：`schemastery` peer 范围改为 `~3.18.4 \|\| ~3.18.5-alpha.1`（DSH 自带版本跟着 DSH 走，0.2.1 是 3.18.5-alpha.1）；新增裸 node 解析垫片 `scripts/dsh-resolve.mjs`；README 纠正已被实测证伪的「必须放进 profile 树内」 |
 | 0.1.7 | 2026-09-26 | 审计修复：自建参数校验、`maxSamples` 硬上限、采样循环防死循环、状态根改用 `$DSH_HOME`、缓存按 mtime 修剪、`get` 不再写文件 |
 | 0.1.6 | 2026-09-24 | 修复走廊类别标签随传参顺序漂移（`crowd` 不再含地铁站/公交站）；适配 DSH `0.1.7-rc.1` 依赖声明 |
 | 0.1.5 | 2026-09-23 | 修复地图"点击点位"报 `Pixel(NaN, NaN)`：标注用数值 LngLat、信息窗延迟创建并按坐标打开 |

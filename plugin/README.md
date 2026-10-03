@@ -6,7 +6,7 @@
 | --- | --- |
 | 形态 | 标准 DSH 插件包（`dsh.plugin`），纯 ESM，无构建步骤 |
 | 工具 | 10 个：`amap_diagnose` / `amap_geocode` / `amap_route` / `amap_corridor` / `amap_map` / `amap_poi` / `amap_traffic` / `amap_weather` / `amap_mode` / `amap_pref` |
-| 需要 | DSH `>= 0.1.5-rc.2`（已在 `0.1.7-rc.1` 上验证）、Node `>= 22`、高德 **Web 服务** key |
+| 需要 | DSH `>= 0.1.5-rc.2`（已在 `0.2.1-alpha.1` 上验证）、Node `>= 22`、高德 **Web 服务** key |
 | 同伴 | skill `amap-trip`（把工具用法、双模式口径、产出约定交给模型） |
 | 许可 | MIT |
 
@@ -75,6 +75,20 @@ pnpm add link:/path/to/amap-trip
 - `amap_map` 渲染可本地打开的 HTML 地图（高德 JSAPI v2），同样落在该目录。
 
 ## 四、更新日志
+
+### 0.1.8（2026-10-03）适配 DSH 0.2.1-alpha.1
+
+- **`schemastery` 的 peer 范围与事实不符**。DSH 自带的 `@deepseek-ai/schemastery` 跟着 DSH 版本走：
+  `0.2.0-rc.2` 是 `3.18.4`，**`0.2.1-alpha.1` 是 `3.18.5-alpha.1`**。原来的 `~3.18.4` 在默认语义下
+  **不包含** `3.18.5-alpha.1`。实测（两个只有 peer 范围不同的探针插件）证明运行期解析由 DSH 的解析
+  路由接管、一律落到宿主那一份，所以不是运行期故障；但声明说了假话。现改为
+  `~3.18.4 || ~3.18.5-alpha.1`，同时覆盖 0.2.0-rc.2 与 0.2.1-alpha.1
+- **新增 `scripts/dsh-resolve.mjs`**：基于 Node `module.registerHooks()` 的解析垫片，让本包测试脚本
+  在 DSH 之外也能 import 到宿主的 `@deepseek-ai/*`（只在常规解析失败时介入，不污染 DSH 运行期）
+- **README 纠正**：删掉「包必须放在 profile 树内」这条已被实测证伪的说明，改为记录 0.2.1 的实际
+  解析行为；补垫片用法
+- `devDependencies["@deepseek-ai/dsh"]` `0.1.7-rc.1` → `0.2.1-alpha.1`；
+  `index.mjs` / `core.mjs` / `corridor.mjs` / `prefs.mjs` / `map-html.mjs` / `presets/` **逐字节未改**
 
 ### 0.1.7（2026-09-26）参数校验与健壮性修复
 
