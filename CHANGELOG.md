@@ -2,6 +2,32 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的结构，版本号用 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.8] - 2026-10-03
+
+适配 **DSH 0.2.1-alpha.1**（上一轮适配目标是 0.1.7-rc.1）。本轮的破坏性变更逐项核对后
+确认**未触及本插件用到任何契约**，实质改动集中在依赖声明与测试可跑性上。详见
+`plugin/ADAPTATION.md` 的「第二轮适配」一节。
+
+### 修复
+- **`schemastery` 的 peer 范围与事实不符。** DSH 自带的 `@deepseek-ai/schemastery` 跟着 DSH
+  版本走：0.2.0-rc.2 是 `3.18.4`，**0.2.1-alpha.1 是 `3.18.5-alpha.1`**。原来的
+  `~3.18.4` 在默认语义下**不包含** `3.18.5-alpha.1`。实测（两个只有 peer 范围不同的探针插件）
+  证明运行期解析由 DSH 路由接管、一律落到宿主那一份，所以这不是运行期故障；但声明说了假话，
+  且会在 `pnpm` 侧留下错误信号。现改为 `~3.18.4 || ~3.18.5-alpha.1`，同时覆盖 0.2.0-rc.2
+  与 0.2.1-alpha.1。
+- **测试脚本在 DSH 之外跑不起来。** `test-plugin.mjs` / `test-prefs.mjs` / `verify-fixes.mjs` /
+  `check-outdir.mjs` / `check-abort.mjs` 都要 import `plugin/index.mjs`，而后者裸导入
+  `@deepseek-ai/schemastery`——该导入只在 DSH 进程内被路由接管，裸 node 下必然
+  `ERR_MODULE_NOT_FOUND`（README 原先把它记作"预期"）。新增 `scripts/dsh-resolve.mjs`
+  解析垫片（Node `module.registerHooks()`），只在常规解析失败时把 `@deepseek-ai/*`
+  改锚到 `$DSH_INSTALL_ROOT`。**不**用本地 `node_modules/`：更近的物理包会盖住宿主那一份。
+
+### 变更
+- `devDependencies["@deepseek-ai/dsh"]` `0.1.7-rc.1` → `0.2.1-alpha.1`（成对声明）。
+- README：删掉「包必须放在 profile 树内」这条**已被实测证伪**的说明，改为记录 0.2.1 的
+  实际解析行为；「开发」一节补 `dsh-resolve.mjs` 用法；脚注同步。
+- 版本 `0.1.7` → `0.1.8`（兼容性预检的豁免按 `name@version` 记账）。
+
 ## [Unreleased]
 
 ### 移除

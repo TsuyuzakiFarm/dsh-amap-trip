@@ -1,6 +1,6 @@
 {
   "name": "amap-trip",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "DSH 双模式高德出行助手：行程编排 + 沿线地理要素摸底（10 个工具 + skill）",
   "type": "module",
   "main": "./index.mjs",
@@ -38,10 +38,10 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.1.5-rc.2",
-    "@deepseek-ai/schemastery": "~3.18.4"
+    "@deepseek-ai/schemastery": "~3.18.4 || ~3.18.5-alpha.1"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh": "0.1.7-rc.1",
-    "@deepseek-ai/schemastery": "~3.18.4"
+    "@deepseek-ai/dsh": "0.2.1-alpha.1",
+    "@deepseek-ai/schemastery": "~3.18.4 || ~3.18.5-alpha.1"
   }
 }

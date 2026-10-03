@@ -40,7 +40,15 @@ bash dsh-amap-trip/scripts/install.sh
 
 **方式 B（手工）**：把 `plugin/` 放到 `<profile>/plugins/amap-trip/`，然后在 profile 的 `cordis.patch.yml` 里挂载包名 `amap-trip`，并让该名字可解析（写进 profile 的 `package.json` 依赖 + `node_modules/amap-trip` 软链）。
 
-> ⚠️ 包必须放在 **profile 树内**（`~/.dsh/profiles/<profile>/plugins/amap-trip/`）：插件 `import '@deepseek-ai/schemastery'`，只有该目录链能解析到 DSH 自带的 `@deepseek-ai/*` 包。
+> ⚠️ **包不必放在 profile 树内。** DSH 0.1.7-rc.1 起，插件对 `@deepseek-ai/schemastery`
+> 的裸导入由 **DSH 的解析路由**接管：只要 `package.json` 的 `peerDependencies` 里声明了它
+> （`~3.18.4 || ~3.18.5-alpha.1`），路由就把该请求就近落到 **DSH 安装自带的那一份**上。
+> 实测（DSH 0.2.1-alpha.1 + linked 插件）解析结果落在
+> `<dsh 安装目录>/node_modules/@deepseek-ai/schemastery`，与 profile 自己 `node_modules/`
+> 里有没有 schemastery 无关。
+>
+> 反过来说：**不要在插件目录里放 `node_modules/` 来“解决”这个导入**。更近的物理包会
+> 优先于 peer 声明，那会让插件拿到第二份 schemastery 实例（见 `plugin/ADAPTATION.md`）。
 
 ### 3. 自检
 
@@ -121,6 +129,20 @@ node scripts/test-corridor.mjs .    # 走廊检索 + 类别码校验
 bash scripts/install.sh             # 部署到本机 DSH profile
 ```
 
+> **在 DSH 之外跑测试：加一层解析垫片。** `plugin/index.mjs` 里有一行
+> `import Schema from '@deepseek-ai/schemastery'`；在 DSH 进程里这个裸导入由 DSH 的解析
+> 路由接管，裸 `node` 下则会报 `ERR_MODULE_NOT_FOUND`。用 `scripts/dsh-resolve.mjs`
+> （基于 Node 的 `module.registerHooks()`）把 DSH 安装根补成解析锚点即可：
+>
+> ```bash
+> # DSH_INSTALL_ROOT 指向含 @deepseek-ai/dsh 的那个 node_modules
+> DSH_INSTALL_ROOT=/path/to/dsh-install/node_modules \
+>   node --import ./scripts/dsh-resolve.mjs scripts/test-prefs.mjs .
+> ```
+>
+> 垫片**只在常规解析失败时**才介入，且只在测试进程里生效——它不会像本地
+> `node_modules/` 软链那样在 DSH 运行期盖住宿主那一份 schemastery。
+
 > **两套部署脚本，职责不同。** 本仓库的 `scripts/install.sh` 是权威：单插件安装/卸载，写
 > profile 的 `package.json` 依赖、`node_modules` 软链、patch insert 行，并同步 `skill/`
 > （支持 `--uninstall` 与 `--dry-run`）。`$DSH_HOME` 之外的 `.work/live-install.sh` 只负责把
@@ -128,8 +150,9 @@ bash scripts/install.sh             # 部署到本机 DSH profile
 > 与 `npm pack` 产物），这一步目前仍需手工做，且版本目录名必须与 `package.json` 的
 > `version` 一致。
 >
-> 另注：这些脚本要 import 插件代码，因此需要 `@deepseek-ai/schemastery` 可解析；在 DSH
-> 之外用裸 node 跑会报 `ERR_MODULE_NOT_FOUND`，属预期（宿主包只在 DSH 运行期可解析）。
+> 另注：这些脚本要 import 插件代码，因此需要 `@deepseek-ai/schemastery` 可解析。在 DSH
+> 之外用裸 node 跑会报 `ERR_MODULE_NOT_FOUND`——用上面「开发」一节的
+> `scripts/dsh-resolve.mjs` 垫片即可（宿主包只在 DSH 运行期可解析）。
 
 ## 已知限制
 
